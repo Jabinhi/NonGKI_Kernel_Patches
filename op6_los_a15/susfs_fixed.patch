@@ -1,0 +1,115 @@
+--- a/fs/proc/cmdline.c
++++ b/fs/proc/cmdline.c
+@@ -51,7 +51,18 @@
+ 
+ static int cmdline_proc_show(struct seq_file *m, void *v)
+ {
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	if (static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
++		susfs_spoof_cmdline_or_bootconfig(m);
++		seq_printf(m, "%s\n");
++		return 0;
++	}
++#endif
++#ifdef CONFIG_INITRAMFS_IGNORE_SKIP_FLAG
+ 	seq_printf(m, "%s\n", proc_command_line);
++#else
++	seq_printf(m, "%s\n", saved_command_line);
++#endif
+ 	return 0;
+ }
+ 
+--- a/fs/proc/task_mmu.c
++++ b/fs/proc/task_mmu.c
+@@ -350,6 +350,23 @@
+ 		   MAJOR(dev), MINOR(dev), ino);
+ }
+ 
++static void show_vma_header_prefix_fake(struct seq_file *m,
++				   unsigned long start, unsigned long end,
++				   vm_flags_t flags, unsigned long long pgoff,
++				   dev_t dev, unsigned long ino)
++{
++	seq_setwidth(m, 25 + sizeof(void *) * 6 - 1);
++	seq_printf(m, "%08lx-%08lx %c%c%c%c %08llx %02x:%02x %lu ",
++		   start,
++		   end,
++		   flags & VM_READ ? 'r' : '-',
++		   flags & VM_WRITE ? 'w' : '-',
++		   flags & VM_EXEC ? '-' : '-',
++		   flags & VM_MAYSHARE ? 's' : 'p',
++		   pgoff,
++		   MAJOR(dev), MINOR(dev), ino);
++}
++
+ #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+ extern void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, unsigned long *out_ino);
+ #endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+@@ -369,12 +386,48 @@
+ 	unsigned long start, end;
+ 	dev_t dev = 0;
+ 	const char *name = NULL;
++	struct dentry *dentry = NULL;
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++	char *spoofed_redirected_name = NULL;
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+ 
+ 	if (file) {
+ 		struct inode *inode = file_inode(vma->vm_file);
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++		if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
++			if (!susfs_open_redirect_spoof_show_map_vma(inode, &ino, &dev, spoofed_redirected_name)) {
++				pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
++				goto orig_flow;
++			}
++		}
++#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
++		if (SUSFS_IS_INODE_SUS_MAP(inode))
++			return;
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+ 		dev = inode->i_sb->s_dev;
+ 		ino = inode->i_ino;
+ 		pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++		susfs_sus_kstat_spoof_show_map_vma(inode, &dev, &ino);
++#endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++        dentry = file->f_path.dentry;
++        if (dentry) {
++        	const char *path = (const char *)dentry->d_name.name; 
++            	if (strstr(path, "lineage")) { 
++	  	start = vma->vm_start;
++		end = vma->vm_end;
++		show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
++            	name = "/dev/ashmem (deleted)";
++		goto done;
++            	 	}
++            	if (strstr(path, "jit-zygote-cache")) {
++	  	start = vma->vm_start;
++		end = vma->vm_end;
++		show_vma_header_prefix_fake(m, start, end, flags, pgoff, dev, ino);
++		goto bypass;
++            	 	}
++            	}
+ 	}
+ 
+ 	/* We don't show the stack guard page in /proc/maps */
+@@ -384,7 +437,7 @@
+ 	start = vma->vm_start;
+ 	end = vma->vm_end;
+ 	show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
+-
++bypass:
+ 	/*
+ 	 * Print the dentry name for named mappings, and a
+ 	 * special [heap] marker for the heap:
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -19,6 +19,7 @@
+ #include <linux/slab.h>
+ #include <linux/vmalloc.h>
+ #include <linux/fs.h>
++#include <linux/mount.h>
+ #include <linux/mutex.h>
+ #include <linux/init.h>
+ #include <linux/string.h>
