@@ -1,0 +1,160 @@
+--- a/drivers/oneplus/fs/Makefile
++++ b/drivers/oneplus/fs/Makefile
+@@ -1,2 +1,2 @@
+-obj-$(CONFIG_EXFAT_FS)		+= exfat/
++#obj-$(CONFIG_EXFAT_FS)		+= exfat/
+ obj-$(CONFIG_PROC_FS)		+= proc/
+--- a/drivers/oneplus/fs/Kconfig
++++ b/drivers/oneplus/fs/Kconfig
+@@ -1,2 +1,2 
+-source "drivers/oneplus/fs/exfat/Kconfig"
++#source "drivers/oneplus/fs/exfat/Kconfig"
+ source "drivers/oneplus/fs/proc/Kconfig
+--- a/drivers/oneplus/fs/exfat/Kconfig
++++ /dev/null
+@@ -1,39 +0,0 @@
+-config EXFAT_FS
+-	tristate "exFAT fs support"
+-	select NLS
+-	help
+-	  This adds support for the exFAT file system.
+-
+-config EXFAT_DISCARD
+-	bool "enable discard support"
+-	depends on EXFAT_FS
+-	default y
+-
+-config EXFAT_DELAYED_SYNC
+-	bool "enable delayed sync"
+-	depends on EXFAT_FS
+-	default n
+-
+-config EXFAT_KERNEL_DEBUG
+-	bool "enable kernel debug features via ioctl"
+-	depends on EXFAT_FS
+-	default n
+-
+-config EXFAT_DEBUG_MSG
+-	bool "print debug messages"
+-	depends on EXFAT_FS
+-	default n
+-
+-config EXFAT_DEFAULT_CODEPAGE
+-	int "Default codepage for exFAT"
+-	default 437
+-	depends on EXFAT_FS
+-	help
+-	  This option should be set to the codepage of your exFAT filesystems.
+-
+-config EXFAT_DEFAULT_IOCHARSET
+-	string "Default iocharset for exFAT"
+-	default "utf8"
+-	depends on EXFAT_FS
+-	help
+-	  Set this to the default input/output character set you'd like exFAT to use.
+--- a/drivers/oneplus/fs/exfat/Makefile
++++ /dev/null
+@@ -1,54 +0,0 @@
+-#
+-# Makefile for Linux FAT12/FAT16/FAT32(VFAT)/FAT64(ExFAT) filesystem driver.
+-#
+-
+-ifneq ($(KERNELRELEASE),)
+-# call from kernel build system
+-
+-obj-$(CONFIG_EXFAT_FS) += exfat.o
+-
+-exfat-objs := exfat_core.o exfat_super.o exfat_api.o exfat_blkdev.o exfat_cache.o \
+-			   exfat_data.o exfat_bitmap.o exfat_nls.o exfat_oal.o exfat_upcase.o
+-
+-else
+-# external module build
+-
+-EXTRA_FLAGS += -I$(PWD)
+-
+-#
+-# KDIR is a path to a directory containing kernel source.
+-# It can be specified on the command line passed to make to enable the module to
+-# be built and installed for a kernel other than the one currently running.
+-# By default it is the path to the symbolic link created when
+-# the current kernel's modules were installed, but
+-# any valid path to the directory in which the target kernel's source is located
+-# can be provided on the command line.
+-#
+-KDIR	?= /lib/modules/$(shell uname -r)/build
+-MDIR	?= /lib/modules/$(shell uname -r)
+-PWD	:= $(shell pwd)
+-PWD	:= $(shell pwd)
+-
+-export CONFIG_EXFAT_FS := m
+-
+-all:
+-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+-
+-clean:
+-	$(MAKE) -C $(KDIR) M=$(PWD) clean
+-
+-help:
+-	$(MAKE) -C $(KDIR) M=$(PWD) help
+-
+-install: exfat.ko
+-	rm -f ${MDIR}/kernel/fs/exfat/exfat.ko
+-	install -m644 -b -D exfat.ko ${MDIR}/kernel/fs/exfat/exfat.ko
+-	depmod -aq
+-
+-uninstall:
+-	rm -rf ${MDIR}/kernel/fs/exfat
+-	depmod -aq
+-
+-endif
+-
+-.PHONY : all clean install uninstall
+--- a/fs/exfat/exfat_fs.h
++++ b/fs/exfat/exfat_fs.h
+@@ -493,7 +493,7 @@ int exfat_getattr(struct user_namespace *mnt_userns, const struct path *path,
+ #endif
+ #else
+ int exfat_setattr(struct dentry *dentry, struct iattr *attr);
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+ int exfat_getattr(const struct path *path, struct kstat *stat,
+ 		unsigned int request_mask, unsigned int query_flags);
+ #else
+--- a/fs/exfat/file.c
++++ b/fs/exfat/file.c
+@@ -6,7 +6,7 @@
+ #include <linux/version.h>
+ #include <linux/slab.h>
+ #include <linux/buffer_head.h>
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+ #include <linux/cred.h>
+ #endif
+ #include <linux/mount.h>
+@@ -259,7 +259,7 @@ int exfat_getattr(struct user_namespace *mnt_uerns, const struct path *path,
+ 		  unsigned int query_flags)
+ #endif
+ #else
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+ int exfat_getattr(const struct path *path, struct kstat *stat,
+ 		unsigned int request_mask, unsigned int query_flags)
+ #else
+@@ -268,7 +268,7 @@ int exfat_getattr(struct vfsmount *mnt, struct dentry *dentry,
+ #endif
+ #endif
+ {
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+ 	struct inode *inode = d_backing_inode(path->dentry);
+ 	struct exfat_inode_info *ei = EXFAT_I(inode);
+ #else
+@@ -289,7 +289,7 @@ int exfat_getattr(struct vfsmount *mnt, struct dentry *dentry,
+ 	generic_fillattr(inode, stat);
+ #endif
+ 	exfat_truncate_atime(&stat->atime);
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+ 	stat->result_mask |= STATX_BTIME;
+ 	stat->btime.tv_sec = ei->i_crtime.tv_sec;
+ 	stat->btime.tv_nsec = ei->i_crtime.tv_nsec;
